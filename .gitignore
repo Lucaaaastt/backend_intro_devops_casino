@@ -1,9 +1,3 @@
-node_modules
-package-lock.json
 .env
+node_modules
 *.log
-coverage
-
-# Claude Code
-.claude/
-CLAUDE.md
