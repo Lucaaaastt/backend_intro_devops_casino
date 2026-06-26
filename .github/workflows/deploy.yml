@@ -1,0 +1,48 @@
+name: Build, Push and Deploy
+ 
+on:
+  push:
+    branches: [deploy]
+ 
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+ 
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+ 
+      - name: Login a ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+ 
+      - name: Build, tag y push de la imagen
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPO: ${{ secrets.ECR_REPOSITORY }}
+          TAG: v1.0.${{ github.run_number }}
+        run: |
+          docker build -t $REGISTRY/$REPO:$TAG .
+          docker tag $REGISTRY/$REPO:$TAG $REGISTRY/$REPO:latest
+          docker tag $REGISTRY/$REPO:$TAG $REGISTRY/$REPO:${{ github.sha }}
+          docker push $REGISTRY/$REPO:$TAG
+          docker push $REGISTRY/$REPO:latest
+          docker push $REGISTRY/$REPO:${{ github.sha }}
+ 
+      - name: Configurar kubeconfig de EKS
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER }} --region ${{ secrets.AWS_REGION }}
+ 
+      - name: Deploy en EKS
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPO: ${{ secrets.ECR_REPOSITORY }}
+          TAG: v1.0.${{ github.run_number }}
+        run: |
+          kubectl set image deployment/casino-backend casino-backend=$REGISTRY/$REPO:$TAG          
+          kubectl rollout status deployment/casino-backend
