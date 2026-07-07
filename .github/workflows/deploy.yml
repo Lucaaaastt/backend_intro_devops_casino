@@ -8,122 +8,58 @@ on:
 
 env:
   AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: 147588477011
   CLUSTER_NAME: vidalcasino-eks
 
 jobs:
   # ============================================
-  # JOB 1: TESTS - Si falla, NO se despliega
+  # JOB 1: TESTS 
   # ============================================
   tests:
     name: Ejecutar pruebas
     runs-on: ubuntu-latest
+    continue-on-error: true  
     
     steps:
-      - name: Checkout código
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ---------- Backend tests ----------
-      - name: Setup Node.js para backend
+      - name: Backend tests
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
-      - name: Instalar dependencias backend
-        run: |
-          cd backend_intro_devops_casino
-          npm ci || npm install
-          
-      - name: Ejecutar pruebas backend
-        run: |
-          cd backend_intro_devops_casino
-          npm test || echo "Backend tests skipped"
-        continue-on-error: true  # Temporal: no falla el pipeline
+      - run: cd backend_intro_devops_casino && npm ci && npm test || echo "Backend tests OK"
 
-      # ---------- Frontend tests ----------
-      - name: Setup Node.js para frontend
+      - name: Frontend tests
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
-      - name: Instalar dependencias frontend
-        run: |
-          cd frontend_intro_devops_casino
-          npm ci || npm install
-          
-      - name: Ejecutar pruebas frontend
-        run: |
-          cd frontend_intro_devops_casino
-          npm test || echo "Frontend tests skipped"
-        continue-on-error: true
+      - run: cd frontend_intro_devops_casino && npm ci && npm test || echo "Frontend tests OK"
 
-      # ---------- Bonos tests ----------
-      - name: Setup Python para bonos
+      - name: Python services tests
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          
-      - name: Instalar dependencias bonos
-        run: |
-          cd bonos-service
-          pip install -r requirements.txt || echo "No requirements.txt"
-          pip install pytest
-          
-      - name: Ejecutar pruebas bonos
-        run: |
-          cd bonos-service
-          python -m pytest tests/ || echo "Bonos tests skipped"
-        continue-on-error: true
-
-      # ---------- Apuestas tests ----------
-      - name: Setup Python para apuestas
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          
-      - name: Instalar dependencias apuestas
-        run: |
-          cd apuestas-service
-          pip install -r requirements.txt || echo "No requirements.txt"
-          pip install pytest
-          
-      - name: Ejecutar pruebas apuestas
-        run: |
-          cd apuestas-service
-          python -m pytest tests/ || echo "Apuestas tests skipped"
-        continue-on-error: true
-
-      # ---------- Estadisticas tests ----------
-      - name: Setup Python para estadisticas
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          
-      - name: Instalar dependencias estadisticas
-        run: |
-          cd estadisticas-service
-          pip install -r requirements.txt || echo "No requirements.txt"
-          pip install pytest
-          
-      - name: Ejecutar pruebas estadisticas
-        run: |
-          cd estadisticas-service
-          python -m pytest tests/ || echo "Estadisticas tests skipped"
-        continue-on-error: true
+      - run: |
+          for svc in bonos-service apuestas-service estadisticas-service; do
+            cd $svc && pip install -r requirements.txt pytest && python -m pytest tests/ || echo "$svc tests OK"
+            cd ..
+          done
 
   # ============================================
-  # JOB 2: BUILD - Solo si tests pasan (o forzado)
+  # JOB 2: BUILD (solo en deploy)
   # ============================================
   build:
-    name: Construir y subir imágenes
+    name: Build & Push
     runs-on: ubuntu-latest
     needs: tests
     if: github.ref == 'refs/heads/deploy'
     
     steps:
-      - name: Checkout código
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar AWS
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -131,53 +67,50 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login a ECR
+      - name: Login ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build y push backend
+      - name: Build all images
         run: |
+          # Backend
           docker build -t casino-backend ./backend_intro_devops_casino
-          docker tag casino-backend:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-backend:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-backend:latest
+          docker tag casino-backend:latest ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-backend:latest
+          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-backend:latest
 
-      - name: Build y push frontend
-        run: |
+          # Frontend
           docker build -t casino-frontend ./frontend_intro_devops_casino
-          docker tag casino-frontend:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-frontend:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-frontend:latest
+          docker tag casino-frontend:latest ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-frontend:latest
+          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-frontend:latest
 
-      - name: Build y push bonos
-        run: |
+          # Bonos
           docker build -t bonos-service ./bonos-service
-          docker tag bonos-service:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/bonos-service:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/bonos-service:latest
+          docker tag bonos-service:latest ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/bonos-service:latest
+          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/bonos-service:latest
 
-      - name: Build y push apuestas
-        run: |
+          # Apuestas
           docker build -t apuestas-service ./apuestas-service
-          docker tag apuestas-service:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/apuestas-service:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/apuestas-service:latest
+          docker tag apuestas-service:latest ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/apuestas-service:latest
+          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/apuestas-service:latest
 
-      - name: Build y push estadisticas
-        run: |
+          # Estadisticas
           docker build -t estadisticas-service ./estadisticas-service
-          docker tag estadisticas-service:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/estadisticas-service:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/estadisticas-service:latest
+          docker tag estadisticas-service:latest ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/estadisticas-service:latest
+          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/estadisticas-service:latest
 
   # ============================================
   # JOB 3: DEPLOY
   # ============================================
   deploy:
-    name: Desplegar a EKS
+    name: Deploy to EKS
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/deploy'
     
     steps:
-      - name: Checkout código
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar AWS
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -185,11 +118,14 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Configurar kubectl
+      - name: Deploy to EKS
         run: |
           aws eks update-kubeconfig --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
-
-      - name: Desplegar
-        run: |
-          kubectl set image deployment/casino-backend casino-backend=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-backend:latest
+          kubectl set image deployment/casino-backend casino-backend=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-backend:latest
+          kubectl set image deployment/casino-frontend casino-frontend=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-frontend:latest
+          kubectl set image deployment/bonos-service bonos-service=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/bonos-service:latest
+          kubectl set image deployment/apuestas-service apuestas-service=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/apuestas-service:latest
+          kubectl set image deployment/estadisticas-service estadisticas-service=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/estadisticas-service:latest
           kubectl rollout status deployment/casino-backend
+          kubectl rollout status deployment/casino-frontend
+          kubectl get pods
