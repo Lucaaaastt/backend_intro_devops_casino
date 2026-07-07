@@ -54,26 +54,16 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Error interno' });
 });
 
-// ============================================================
-// EXPORTAR app PARA PRUEBAS (supertest)
-// ============================================================
-module.exports = app;
+(async () => {
+  // Espera a que Postgres esté listo antes de levantar el servidor HTTP.
+  // Necesario cuando el backend arranca antes que el contenedor de la BD
+  // (depende de depends_on + healthcheck en docker-compose.yml).
+  await esperarBD();
+  await sembrarUsuariosDemo();
 
-// ============================================================
-// SOLO ESCUCHAR si se ejecuta directamente (no en pruebas)
-// ============================================================
-if (require.main === module) {
-  (async () => {
-    // Espera a que Postgres esté listo antes de levantar el servidor HTTP.
-    // Necesario cuando el backend arranca antes que el contenedor de la BD
-    // (depende de depends_on + healthcheck en docker-compose.yml).
-    await esperarBD();
-    await sembrarUsuariosDemo();
-
-    // Bind a 0.0.0.0 es obligatorio dentro de un contenedor:
-    // 'localhost' solo aceptaría conexiones desde dentro del propio contenedor.
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`[API] Casino escuchando en http://0.0.0.0:${PORT}`);
-    });
-  })();
-}
+  // Bind a 0.0.0.0 es obligatorio dentro de un contenedor:
+  // 'localhost' solo aceptaría conexiones desde dentro del propio contenedor.
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[API] Casino escuchando en http://0.0.0.0:${PORT}`);
+  });
+})();
