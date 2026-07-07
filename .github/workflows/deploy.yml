@@ -12,13 +12,10 @@ env:
   CLUSTER_NAME: vidalcasino-eks
 
 jobs:
-  # ============================================
-  # JOB 1: TESTS 
-  # ============================================
   tests:
     name: Ejecutar pruebas
     runs-on: ubuntu-latest
-    continue-on-error: true  
+    continue-on-error: true
     
     steps:
       - name: Checkout
@@ -28,27 +25,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: cd backend_intro_devops_casino && npm ci && npm test || echo "Backend tests OK"
+      - run: npm ci && npm test || echo "Backend tests OK"
 
-      - name: Frontend tests
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: cd frontend_intro_devops_casino && npm ci && npm test || echo "Frontend tests OK"
-
-      - name: Python services tests
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: |
-          for svc in bonos-service apuestas-service estadisticas-service; do
-            cd $svc && pip install -r requirements.txt pytest && python -m pytest tests/ || echo "$svc tests OK"
-            cd ..
-          done
-
-  # ============================================
-  # JOB 2: BUILD (solo en deploy)
-  # ============================================
   build:
     name: Build & Push
     runs-on: ubuntu-latest
@@ -70,36 +48,12 @@ jobs:
       - name: Login ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build all images
+      - name: Build and push
         run: |
-          # Backend
-          docker build -t casino-backend ./backend_intro_devops_casino
+          docker build -t casino-backend .
           docker tag casino-backend:latest ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-backend:latest
           docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-backend:latest
 
-          # Frontend
-          docker build -t casino-frontend ./frontend_intro_devops_casino
-          docker tag casino-frontend:latest ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-frontend:latest
-          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-frontend:latest
-
-          # Bonos
-          docker build -t bonos-service ./bonos-service
-          docker tag bonos-service:latest ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/bonos-service:latest
-          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/bonos-service:latest
-
-          # Apuestas
-          docker build -t apuestas-service ./apuestas-service
-          docker tag apuestas-service:latest ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/apuestas-service:latest
-          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/apuestas-service:latest
-
-          # Estadisticas
-          docker build -t estadisticas-service ./estadisticas-service
-          docker tag estadisticas-service:latest ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/estadisticas-service:latest
-          docker push ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/estadisticas-service:latest
-
-  # ============================================
-  # JOB 3: DEPLOY
-  # ============================================
   deploy:
     name: Deploy to EKS
     runs-on: ubuntu-latest
@@ -122,10 +76,5 @@ jobs:
         run: |
           aws eks update-kubeconfig --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
           kubectl set image deployment/casino-backend casino-backend=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-backend:latest
-          kubectl set image deployment/casino-frontend casino-frontend=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/casino-frontend:latest
-          kubectl set image deployment/bonos-service bonos-service=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/bonos-service:latest
-          kubectl set image deployment/apuestas-service apuestas-service=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/apuestas-service:latest
-          kubectl set image deployment/estadisticas-service estadisticas-service=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/estadisticas-service:latest
           kubectl rollout status deployment/casino-backend
-          kubectl rollout status deployment/casino-frontend
           kubectl get pods
